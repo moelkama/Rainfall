@@ -1,0 +1,49 @@
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+
+struct S
+{
+    int id;
+    char *buf;
+};
+
+char *pass_file = "/home/user/level8/.pass";
+char *put_buf = "~~";
+
+char c[68];
+
+void m(void)
+{
+    time_t t;
+
+    t = time(NULL);
+    printf("%s - %d\n", c, t);
+}
+
+int main(int argc, char **argv)
+{
+    struct S *s1;
+    struct S *s2;
+    FILE *fp;
+
+    s1 = malloc(8);
+    s1->id = 1;
+    s1->buf = malloc(8);
+
+    s2 = malloc(8);
+    s2->id = 2;
+    s2->buf = malloc(8);
+
+    strcpy(s1->buf, argv[1]);
+    strcpy(s2->buf, argv[2]);
+    
+    fp = fopen(pass_file, "r");
+    fgets(c, 0x44, fp);
+    printf("hello world\n");
+
+    puts(c);
+    return 0;
+}

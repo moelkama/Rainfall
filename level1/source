@@ -1,0 +1,18 @@
+#include <stdio.h>
+#include <stdlib.h>
+
+const char *msg = "Good... Wait what?\n";
+
+void run()
+{
+    fwrite(msg, 1, 0x13, stdout);
+    system("/bin/sh");
+}
+
+int main()
+{
+    char reserved[0x50];
+
+    gets(reserved + 0x10);
+    return 0;
+}

