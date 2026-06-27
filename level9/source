@@ -1,3 +1,4 @@
+
 class N {
     public:
         void* vtable;        // Points to virtual methods (at offset +0)

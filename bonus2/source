@@ -1,0 +1,56 @@
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+
+int global_var = 0;
+
+typedef struct {
+    char username[40];
+    char message[32];
+    int padding;
+} UserData;
+
+void greetuser(UserData data) {
+    char local_str[72]; 
+
+    if (global_var == 1) {
+        strcpy(local_str, "Hyv\303\244\303\244 p\303\244iv\303\244\303\244 "); 
+    }
+    else if (global_var == 2) {
+        strcpy(local_str, "Goedemiddag! ");
+    }
+    else if (global_var == 0) {
+        strcpy(local_str, "Hello ");
+    }
+
+    strcat(local_str, (char*)&data);
+    
+    puts(local_str);
+}
+
+int main(int argc, char *argv[]) {
+    UserData user_data;
+
+    if (argc != 3) {
+        return 1;
+    }
+
+    memset(&user_data, 0, sizeof(UserData));
+
+    strncpy(user_data.username, argv[1], 40);
+
+    strncpy(user_data.message, argv[2], 32);
+
+    char *env_val = getenv("LANG");
+    if (env_val != NULL) {
+        if (memcmp(env_val, "fi", 2) == 0) {
+            global_var = 1;
+        } 
+        else if (memcmp(env_val, "nl", 2) == 0) {
+            global_var = 2;
+        }
+    }
+    greetuser(user_data);
+
+    return 0;
+}
