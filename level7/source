@@ -10,9 +10,6 @@ struct S
     char *buf;
 };
 
-char *pass_file = "/home/user/level8/.pass";
-char *put_buf = "~~";
-
 char c[68];
 
 void m(void)
@@ -39,11 +36,10 @@ int main(int argc, char **argv)
 
     strcpy(s1->buf, argv[1]);
     strcpy(s2->buf, argv[2]);
-    
-    fp = fopen(pass_file, "r");
-    fgets(c, 0x44, fp);
-    printf("hello world\n");
 
-    puts(c);
+    fp = fopen("/home/user/level8/.pass", "r");
+    fgets(c, 0x44, fp);
+
+    puts("~~");
     return 0;
 }

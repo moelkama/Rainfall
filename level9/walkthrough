@@ -52,7 +52,7 @@ equiivalent code :
 
 ```cpp
 if (argc <= 1)
-    exit(1);
+    _exit(1);
 ```
 
 this explains the status code observed during the first execution.
@@ -234,6 +234,7 @@ the first instruction stores :
 eax is (this) poiter to the obj.
 
 So it's writing a constant address at offset 0 of the object:
+
 ```cpp
 *(void **)this = 0x8048848;
 ```
@@ -350,7 +351,7 @@ strlen(argv[1])
 
 and no size check is performed.
 
-This allows writing past the end of the annotation buffer and overflowing into the next heap object.
+This allows writing past the end of the annotation buffer and overflowing into the next heap objects.
 
 layout :
 
@@ -613,7 +614,11 @@ int 0x80
 
 convet these instructions to Opcode Hex using the opcode table (i386) we get:
 
-sed 's/../\\x&/g'
+```bash
+nasm -f elf32 assem.asm \
+ld -m elf_i386 assem.o -o out \
+for i in $(objdump -d out | grep '^ ' | cut -f2); do echo -n '\x'$i; done; echo
+```
 
 ```text
 xor eax, eax      ->  \x31\xc0

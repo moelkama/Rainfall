@@ -1,58 +1,11 @@
----------------functions
-echo 'info functions' | gdb -q level7 
-Reading symbols from /home/user/level7/level7...(no debugging symbols found)...done.
-(gdb) All defined functions:
+## main:
 
-Non-debugging symbols:
-0x0804836c  _init
-0x080483b0  printf
-0x080483b0  printf@plt
-0x080483c0  fgets
-0x080483c0  fgets@plt
-0x080483d0  time
-0x080483d0  time@plt
-0x080483e0  strcpy
-0x080483e0  strcpy@plt
-0x080483f0  malloc
-0x080483f0  malloc@plt
-0x08048400  puts
-0x08048400  puts@plt
-0x08048410  __gmon_start__
-0x08048410  __gmon_start__@plt
-0x08048420  __libc_start_main
-0x08048420  __libc_start_main@plt
-0x08048430  fopen
-0x08048430  fopen@plt
-0x08048440  _start
-0x08048470  __do_global_dtors_aux
-0x080484d0  frame_dummy
-0x080484f4  m
-0x08048521  main
-0x08048610  __libc_csu_init
-0x08048680  __libc_csu_fini
-0x08048682  __i686.get_pc_thunk.bx
-0x08048690  __do_global_ctors_aux
-0x080486bc  _fini
-(gdb) quit
-----------
-
-
-
-
-
-
-
-
-
-----------main
-echo 'disas main' | gdb -q level7 
-Reading symbols from /home/user/level7/level7...(no debugging symbols found)...done.
-(gdb) Dump of assembler code for function main:
-   0x08048521 <+0>:	push   %ebp
-   0x08048522 <+1>:	mov    %esp,%ebp
-   0x08048524 <+3>:	and    $0xfffffff0,%esp
-   0x08048527 <+6>:	sub    $0x20,%esp
-   0x0804852a <+9>:	movl   $0x8,(%esp)
+```asm
+   0x08048521 <+0>:	    push   %ebp
+   0x08048522 <+1>:	    mov    %esp,%ebp
+   0x08048524 <+3>:	    and    $0xfffffff0,%esp
+   0x08048527 <+6>:	    sub    $0x20,%esp
+   0x0804852a <+9>:	    movl   $0x8,(%esp)
    0x08048531 <+16>:	call   0x80483f0 <malloc@plt>
    0x08048536 <+21>:	mov    %eax,0x1c(%esp)
    0x0804853a <+25>:	mov    0x1c(%esp),%eax
@@ -103,21 +56,16 @@ Reading symbols from /home/user/level7/level7...(no debugging symbols found)...d
    0x080485f7 <+214>:	call   0x8048400 <puts@plt>
    0x080485fc <+219>:	mov    $0x0,%eax
    0x08048601 <+224>:	leave  
-   0x08048602 <+225>:	ret    
-End of assembler dump.
-(gdb) quit
-----------
+   0x08048602 <+225>:	ret
+```
 
+## m:
 
-
-------------m
-echo 'disas m' | gdb -q level7 
-Reading symbols from /home/user/level7/level7...(no debugging symbols found)...done.
-(gdb) Dump of assembler code for function m:
-   0x080484f4 <+0>:	push   %ebp
-   0x080484f5 <+1>:	mov    %esp,%ebp
-   0x080484f7 <+3>:	sub    $0x18,%esp
-   0x080484fa <+6>:	movl   $0x0,(%esp)
+```asm
+   0x080484f4 <+0>:	    push   %ebp
+   0x080484f5 <+1>:	    mov    %esp,%ebp
+   0x080484f7 <+3>:	    sub    $0x18,%esp
+   0x080484fa <+6>:	    movl   $0x0,(%esp)
    0x08048501 <+13>:	call   0x80483d0 <time@plt>
    0x08048506 <+18>:	mov    $0x80486e0,%edx
    0x0804850b <+23>:	mov    %eax,0x8(%esp)
@@ -125,7 +73,5 @@ Reading symbols from /home/user/level7/level7...(no debugging symbols found)...d
    0x08048517 <+35>:	mov    %edx,(%esp)
    0x0804851a <+38>:	call   0x80483b0 <printf@plt>
    0x0804851f <+43>:	leave  
-   0x08048520 <+44>:	ret    
-End of assembler dump.
-(gdb) quit
-------------
+   0x08048520 <+44>:	ret
+```

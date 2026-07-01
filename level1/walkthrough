@@ -74,36 +74,7 @@ Since `gets()` performs no bounds checking, this immediately suggests a stack bu
 
 ## Searching for Useful Code
 
-Instead of injecting shellcode, I searched for existing code that already executes a shell.
-
-```bash
-objdump -d level1 | grep system
-```
-
-This revealed:
-
-```asm
-movl   $0x8048584,(%esp)
-call   system@plt
-```
-
-Inspecting the argument:
-
-```gdb
-x/s 0x8048584
-```
-
-shows:
-
-```text
-0x8048584: "/bin/sh"
-```
-
-Therefore, the binary already contains:
-
-```c
-system("/bin/sh");
-```
+Instead of injecting shellcode, I found an existing function run() that already executes a shell by calling system("/bin/sh").
 
 The goal becomes redirecting execution flow to this code.
 
@@ -178,24 +149,24 @@ The offset to EIP is therefore:
 ## Stack Layout
 
 ```text
-HIGH ADDRESS
-──────────────────────
-| RET to caller      |  <-- [ebp+4]
-──────────────────────
-| Saved EBP          |  <-- [ebp]
-──────────────────────
-| Compiler padding   |
-|      8 bytes       |
-──────────────────────
-|                    |
-| Local buffer       |
-|     64 bytes       |
-| gets() writes here |
-──────────────────────
-| Alignment space    |
-|     16 bytes       |
-──────────────────────
-LOW ADDRESS
+    HIGH ADDRESS
+    ──────────────────────
+    | RET to caller      |  <-- [ebp+4]
+    ──────────────────────
+    | Saved EBP          |  <-- [ebp]
+    ──────────────────────
+    | Compiler padding   |
+    |      8 bytes       |
+    ──────────────────────
+    |                    |
+    | Local buffer       |
+    |     64 bytes       |
+    | gets() writes here |
+    ──────────────────────
+    | Alignment space    |
+    |     16 bytes       |
+    ──────────────────────
+    LOW ADDRESS
 ```
 
 ---

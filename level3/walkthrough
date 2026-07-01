@@ -46,7 +46,7 @@ to disassemble the function "v".
     call   0x80483a0 <fgets@plt>
     ```
 
-    why fgets not gets? after research i found that fgets control the max size can read from a file
+    why fgets not gets? because fgets control the max size can read from a file
 
 by using gdb i found there is compare operation with a global variable at:
 
@@ -62,7 +62,7 @@ if equal to:
 
 the program successfully execute "/bin/sh".
 
-then i realize i need to modify this global variable value.
+then i realize automaticly i need to overwrite this global variable value.
 
 after learning about exploitations methods 
 i found The Format String Exploitation wich make the user be abel to :
@@ -146,7 +146,7 @@ from this test:
 python -c 'print "AAAA" + " %x"*20' | ./level3
 ```
 
-we get:
+i get:
 
 ```text
 AAAA 200 b7fd1ac0 b7ff37d0 41414141 ...

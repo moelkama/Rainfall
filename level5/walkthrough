@@ -70,9 +70,7 @@ this time i need to control the EIP register to jump to `o()`.
 
 ---
 
-## Looking for Another Target
-
-i first think about overwriting the return address, but this is not possible because there is no buffer overflow.
+at first i think about overwriting the return address, but this is not possible because there is no buffer overflow.
 
 the only thing i control is the format string passed to `printf()`.
 

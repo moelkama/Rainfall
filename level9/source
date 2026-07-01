@@ -1,18 +1,27 @@
+#include <stdlib.h>
+#include <iostream>
+#include <unistd.h>
 
 class N {
-    public:
-        void* vtable;        // Points to virtual methods (at offset +0)
-        char annotation[100];
-        int value;
+public:
+    char annotation[100];
+    int value;
 
-        N(int val) {
-            this->vtable = (void*)0x8048848;
-            this->value = val;
-        }
+    N(int val) {
+        this->value = val;
+    }
 
-        void setAnnotation(char* src) {
-            memcpy(this->annotation, src, strlen(src));
-        }
+    void setAnnotation(char* src) {
+        memcpy(this->annotation, src, strlen(src));
+    }
+
+    virtual int operator+(N& other) {
+        return this->value + other.value;
+    }
+
+    virtual int operator-(N& other) {
+        return this->value - other.value;
+    }
 };
 
 int main(int argc, char** argv) {
@@ -24,5 +33,7 @@ int main(int argc, char** argv) {
 
     N1->setAnnotation(argv[1]);
 
-    (N2->vtable)(); 
+    N2->operator+(*N1);
+
+    return 0;
 }

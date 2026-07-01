@@ -14,7 +14,7 @@ Nothing special happens. The program prints a "~~" message and exits.
 At this point I know two things:
 
 * the program expects two arguments (properly).
-* user controlled data is probably processed somewhere.
+* user controlled data is probably by argv.
 
 To understand what happens internally, I decide to inspect the assembly code:
 
@@ -123,7 +123,6 @@ Then I continue reading the assembly and find the first call to `strcpy`.
 To understand what is copied, I follow the registers.
 
 First:
-
     mov 0xc(%ebp),%eax
 
 loads `argv` into `%eax`.
